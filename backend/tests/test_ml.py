@@ -92,7 +92,14 @@ def test_api_training_is_idempotent_owned_and_cut_off():
         cutoff=rows[215].date
         sid=client.post('/sessions',headers=header,json={'start_date':cutoff.isoformat()}).json()['id']
         path=f'/sessions/{sid}/models/MODELTEST'
-        assert client.get(path,headers=header).json()['status']=='untrained'
+        discovered=client.get(f'/sessions/{sid}/models/signals',headers=header)
+        assert discovered.status_code==200,discovered.text
+        assert discovered.json()[0]['symbol']=='MODELTEST'
+        automatic=client.get(path,headers=header)
+        assert automatic.status_code==200,automatic.text
+        assert automatic.json()['status']=='trained'
+        assert automatic.json()['trained_through']==cutoff.isoformat()
+        assert automatic.json()['decision_profile']=={'resolved':0,'correct':0,'accuracy':None,'up_calls':0,'up_correct':0,'down_calls':0,'down_correct':0,'status':'gathering_history'}
         response=client.post(path+'/train',headers=header)
         assert response.status_code==200,response.text
         trained=response.json()

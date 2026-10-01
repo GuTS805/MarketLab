@@ -1,3 +1,3 @@
-export type ModelSignal={symbol:string;probability_up:number;predicted_direction:'Up'|'Down';quality:'above_baseline'|'experimental';stale:boolean;trained_through:string;test_count:number;metrics:{accuracy:number;baseline_accuracy:number}};
+export type ModelSignal={symbol:string;probability_up:number;predicted_direction:'Up'|'Down';quality:'above_baseline'|'experimental';stale:boolean;trained_through:string;test_count:number;metrics:{accuracy:number;baseline_accuracy:number};decision_profile?:{resolved:number;correct:number;accuracy:number|null;up_calls:number;up_correct:number;down_calls:number;down_correct:number;status:'pattern_available'|'gathering_history'}};
 export const signalPct=(s:ModelSignal)=>`${Math.round(s.probability_up*100)}%`;
-export const signalCaution=(s:ModelSignal)=>s.stale?'Needs retraining for this date':s.quality==='experimental'?'Did not clearly beat baseline':'Beat holdout baseline';
+export const signalCaution=(s:ModelSignal)=>s.stale?'Using an earlier available run':s.quality==='experimental'?'Did not clearly beat baseline':'Beat holdout baseline';

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import String, Date, DateTime, ForeignKey, Numeric, Integer, Boolean, UniqueConstraint, Index, Text
+from sqlalchemy import String, Date, DateTime, ForeignKey, Numeric, Integer, BigInteger, Boolean, UniqueConstraint, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from .database import Base
 
@@ -11,17 +11,17 @@ class Instrument(Base):
 class DailyPrice(Base):
     __tablename__="daily_prices"; id: Mapped[int]=mapped_column(primary_key=True); instrument_id: Mapped[int]=mapped_column(ForeignKey("instruments.id"),index=True); date: Mapped[date]=mapped_column(Date,index=True); open: Mapped[Decimal]=mapped_column(Numeric(18,4)); high: Mapped[Decimal]=mapped_column(Numeric(18,4)); low: Mapped[Decimal]=mapped_column(Numeric(18,4)); close: Mapped[Decimal]=mapped_column(Numeric(18,4)); adj_close: Mapped[Decimal|None]=mapped_column(Numeric(18,4)); volume: Mapped[int]=mapped_column(Integer,default=0); dividends: Mapped[Decimal]=mapped_column(Numeric(18,4),default=0); stock_splits: Mapped[Decimal]=mapped_column(Numeric(18,6),default=0); __table_args__=(UniqueConstraint("instrument_id","date"),Index("ix_price_inst_date","instrument_id","date"))
 class Simulation(Base):
-    __tablename__="simulations"; id: Mapped[int]=mapped_column(primary_key=True); user_id: Mapped[int]=mapped_column(ForeignKey("users.id"),index=True); name: Mapped[str]=mapped_column(String(120),default="Sandbox"); current_date: Mapped[date]=mapped_column(Date); start_date: Mapped[date]=mapped_column(Date); cash: Mapped[Decimal]=mapped_column(Numeric(18,2),default=100000); initial_cash: Mapped[Decimal]=mapped_column(Numeric(18,2),default=100000); active: Mapped[bool]=mapped_column(Boolean,default=True); version: Mapped[int]=mapped_column(Integer,default=0); fees_enabled: Mapped[bool]=mapped_column(Boolean,default=False)
+    __tablename__="simulations"; id: Mapped[int]=mapped_column(primary_key=True); user_id: Mapped[int]=mapped_column(ForeignKey("users.id"),index=True); name: Mapped[str]=mapped_column(String(120),default="Sandbox"); current_date: Mapped[date]=mapped_column(Date); start_date: Mapped[date]=mapped_column(Date); cash: Mapped[Decimal]=mapped_column(Numeric(24,2),default=100000); initial_cash: Mapped[Decimal]=mapped_column(Numeric(24,2),default=100000); active: Mapped[bool]=mapped_column(Boolean,default=True); version: Mapped[int]=mapped_column(Integer,default=0); fees_enabled: Mapped[bool]=mapped_column(Boolean,default=False)
 class Order(Base):
-    __tablename__="orders"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id"),index=True); instrument_id: Mapped[int]=mapped_column(ForeignKey("instruments.id")); side: Mapped[str]=mapped_column(String(4)); order_type: Mapped[str]=mapped_column(String(8)); quantity: Mapped[int]=mapped_column(Integer); limit_price: Mapped[Decimal|None]=mapped_column(Numeric(18,2)); status: Mapped[str]=mapped_column(String(16),default="pending"); submitted_date: Mapped[date]=mapped_column(Date); created_at: Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
+    __tablename__="orders"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id"),index=True); instrument_id: Mapped[int]=mapped_column(ForeignKey("instruments.id")); side: Mapped[str]=mapped_column(String(4)); order_type: Mapped[str]=mapped_column(String(8)); quantity: Mapped[int]=mapped_column(BigInteger); limit_price: Mapped[Decimal|None]=mapped_column(Numeric(24,2)); status: Mapped[str]=mapped_column(String(16),default="pending"); submitted_date: Mapped[date]=mapped_column(Date); created_at: Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)
 class Fill(Base):
-    __tablename__="fills"; id: Mapped[int]=mapped_column(primary_key=True); order_id: Mapped[int]=mapped_column(ForeignKey("orders.id"),unique=True); date: Mapped[date]=mapped_column(Date); quantity: Mapped[int]=mapped_column(Integer); price: Mapped[Decimal]=mapped_column(Numeric(18,2))
+    __tablename__="fills"; id: Mapped[int]=mapped_column(primary_key=True); order_id: Mapped[int]=mapped_column(ForeignKey("orders.id"),unique=True); date: Mapped[date]=mapped_column(Date); quantity: Mapped[int]=mapped_column(BigInteger); price: Mapped[Decimal]=mapped_column(Numeric(24,2))
 class Holding(Base):
-    __tablename__="holdings"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id")); instrument_id: Mapped[int]=mapped_column(ForeignKey("instruments.id")); quantity: Mapped[int]=mapped_column(Integer,default=0); avg_cost: Mapped[Decimal]=mapped_column(Numeric(18,4),default=0); realized_pnl: Mapped[Decimal]=mapped_column(Numeric(18,2),default=0); __table_args__=(UniqueConstraint("simulation_id","instrument_id"),)
+    __tablename__="holdings"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id")); instrument_id: Mapped[int]=mapped_column(ForeignKey("instruments.id")); quantity: Mapped[int]=mapped_column(BigInteger,default=0); avg_cost: Mapped[Decimal]=mapped_column(Numeric(18,4),default=0); realized_pnl: Mapped[Decimal]=mapped_column(Numeric(24,2),default=0); __table_args__=(UniqueConstraint("simulation_id","instrument_id"),)
 class CashLedger(Base):
-    __tablename__="cash_ledger"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id")); date: Mapped[date]=mapped_column(Date); amount: Mapped[Decimal]=mapped_column(Numeric(18,2)); kind: Mapped[str]=mapped_column(String(30)); reference: Mapped[str|None]=mapped_column(String(80))
+    __tablename__="cash_ledger"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id")); date: Mapped[date]=mapped_column(Date); amount: Mapped[Decimal]=mapped_column(Numeric(24,2)); kind: Mapped[str]=mapped_column(String(30)); reference: Mapped[str|None]=mapped_column(String(80))
 class Snapshot(Base):
-    __tablename__="snapshots"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id")); date: Mapped[date]=mapped_column(Date); cash: Mapped[Decimal]=mapped_column(Numeric(18,2)); equity: Mapped[Decimal]=mapped_column(Numeric(18,2)); __table_args__=(UniqueConstraint("simulation_id","date"),)
+    __tablename__="snapshots"; id: Mapped[int]=mapped_column(primary_key=True); simulation_id: Mapped[int]=mapped_column(ForeignKey("simulations.id")); date: Mapped[date]=mapped_column(Date); cash: Mapped[Decimal]=mapped_column(Numeric(24,2)); equity: Mapped[Decimal]=mapped_column(Numeric(24,2)); __table_args__=(UniqueConstraint("simulation_id","date"),)
 class Watchlist(Base):
     __tablename__="watchlists"; id: Mapped[int]=mapped_column(primary_key=True); user_id: Mapped[int]=mapped_column(ForeignKey("users.id")); instrument_id: Mapped[int]=mapped_column(ForeignKey("instruments.id")); __table_args__=(UniqueConstraint("user_id","instrument_id"),)
 class ImportRun(Base):
@@ -65,6 +65,6 @@ class Challenge(Base):
     goal: Mapped[str]=mapped_column(String(40))
     start_date: Mapped[date]=mapped_column(Date)
     duration_days: Mapped[int]=mapped_column(Integer,default=20)
-    starting_equity: Mapped[Decimal]=mapped_column(Numeric(18,2))
+    starting_equity: Mapped[Decimal]=mapped_column(Numeric(24,2))
     completed_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
     created_at: Mapped[datetime]=mapped_column(DateTime,default=datetime.utcnow)

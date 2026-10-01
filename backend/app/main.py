@@ -15,13 +15,9 @@ from .database import Base, engine, SessionLocal
 from .models import *
 from .events import events_between
 from . import ml
+from .schema import initialize_schema
 
-Base.metadata.create_all(engine)
-with engine.begin() as _c:  # lightweight migration for databases created before transaction costs existed
-    if "fees_enabled" not in [c["name"] for c in inspect(engine).get_columns("simulations")]:
-        _c.execute(text("ALTER TABLE simulations ADD COLUMN fees_enabled BOOLEAN DEFAULT 0"))
-    if inspect(engine).has_table("challenges") and "completed_at" not in [c["name"] for c in inspect(engine).get_columns("challenges")]:
-        _c.execute(text("ALTER TABLE challenges ADD COLUMN completed_at DATETIME"))
+initialize_schema(engine, Base.metadata)
 def build_id():
     digest=hashlib.sha256()
     for name in ("main.py","ml.py","models.py","database.py"):
@@ -30,8 +26,9 @@ def build_id():
 
 BUILD_ID=build_id()
 app=FastAPI(title="MarketLab API",version="2.0")
-app.add_middleware(CORSMiddleware,allow_origins=[],allow_origin_regex=r"http://(?:localhost|127\.0\.0\.1):30\d\d",allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
+app.add_middleware(CORSMiddleware,allow_origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS","").split(",") if o.strip()],allow_origin_regex=r"http://(?:localhost|127\.0\.0\.1):30\d\d",allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 pwd=CryptContext(schemes=["bcrypt"],deprecated="auto"); oauth=OAuth2PasswordBearer(tokenUrl="/auth/login"); SECRET=os.getenv("JWT_SECRET","dev-only-change-me")
+if os.getenv("RENDER") and SECRET=="dev-only-change-me": raise RuntimeError("JWT_SECRET must be set in production")
 def db():
     s=SessionLocal()
     try: yield s
@@ -267,10 +264,32 @@ def model_quality(run:ModelRun,metrics:dict):
     earlier_ok=earlier is not None and earlier["accuracy"]>=earlier["baseline_accuracy"]+.02
     return "above_baseline" if final_ok and earlier_ok else "experimental"
 
+def ensure_model(s:Session,z:Simulation,i:Instrument,prices:list[DailyPrice]):
+    existing=s.scalar(select(ModelRun.id).where(ModelRun.simulation_id==z.id,ModelRun.instrument_id==i.id,ModelRun.version==ml.VERSION,ModelRun.trained_through==z.current_date))
+    if existing or len(prices)<ml.MIN_SAMPLES+21: return
+    try: result=ml.train(prices)
+    except ValueError: return
+    result["artifact"]["dataset_revision"]=s.scalar(select(ImportRun.revision).order_by(ImportRun.id.desc()))
+    s.add(ModelRun(simulation_id=z.id,instrument_id=i.id,version=ml.VERSION,trained_through=z.current_date,samples=result["sample_count"],train_samples=result["train_count"],test_samples=result["test_count"],metrics_json=json.dumps(result["metrics"]),artifact_json=json.dumps(result["artifact"]),holdout_json=json.dumps(result["holdout"])))
+    s.commit()
+
+def decision_profile(s:Session,z:Simulation,i:Instrument):
+    rows=s.scalars(select(JournalEntry).where(JournalEntry.simulation_id==z.id,JournalEntry.instrument_id==i.id,JournalEntry.decision_date<z.current_date,JournalEntry.horizon_days==1).order_by(JournalEntry.decision_date)).all()
+    resolved=[]
+    for entry in rows:
+        next_close=s.scalar(select(DailyPrice.close).where(DailyPrice.instrument_id==i.id,DailyPrice.date>entry.decision_date,DailyPrice.date<=z.current_date).order_by(DailyPrice.date).limit(1))
+        if next_close is not None:
+            actual="Up" if next_close>entry.decision_close else "Down"
+            resolved.append((entry.predicted_direction,actual))
+    correct=sum(call==actual for call,actual in resolved)
+    up_calls=sum(call=="Up" for call,_ in resolved)
+    down_calls=len(resolved)-up_calls
+    return {"resolved":len(resolved),"correct":correct,"accuracy":correct/len(resolved) if resolved else None,"up_calls":up_calls,"up_correct":sum(call==actual for call,actual in resolved if call=="Up"),"down_calls":down_calls,"down_correct":sum(call==actual for call,actual in resolved if call=="Down"),"status":"pattern_available" if len(resolved)>=5 else "gathering_history"}
+
 def model_response(s:Session,z:Simulation,i:Instrument,prices:list[DailyPrice]):
     samples=ml.examples(prices)
     latest=s.scalar(select(ModelRun).where(ModelRun.simulation_id==z.id,ModelRun.instrument_id==i.id,ModelRun.version==ml.VERSION).order_by(ModelRun.trained_through.desc(),ModelRun.id.desc()))
-    base={"symbol":i.symbol,"simulation_date":z.current_date,"model_version":ml.VERSION,"minimum_samples":ml.MIN_SAMPLES,"available_samples":sum(x.label is not None for x in samples)}
+    base={"symbol":i.symbol,"simulation_date":z.current_date,"model_version":ml.VERSION,"minimum_samples":ml.MIN_SAMPLES,"available_samples":sum(x.label is not None for x in samples),"decision_profile":decision_profile(s,z,i)}
     if not latest: return {**base,"status":"untrained"}
     artifact=json.loads(latest.artifact_json)
     probability=ml.predict(artifact,samples[-1].features) if samples and samples[-1].date==z.current_date else None
@@ -281,6 +300,10 @@ def model_response(s:Session,z:Simulation,i:Instrument,prices:list[DailyPrice]):
 @app.get("/sessions/{sid}/models/signals")
 def model_signals(sid:int,u:User=Depends(user),s:Session=Depends(db)):
     z=sim_owned(s,sid,u)
+    for i in s.scalars(select(Instrument).where(Instrument.is_benchmark==False)).all():
+        prices=s.scalars(select(DailyPrice).where(DailyPrice.instrument_id==i.id,DailyPrice.date<=z.current_date).order_by(DailyPrice.date)).all()
+        if prices and prices[-1].date==z.current_date:
+            ensure_model(s,z,i,prices)
     runs=s.scalars(select(ModelRun).where(ModelRun.simulation_id==z.id,ModelRun.version==ml.VERSION,ModelRun.trained_through<=z.current_date).order_by(ModelRun.trained_through.desc(),ModelRun.id.desc())).all()
     signals=[]; seen=set()
     for run in runs:
@@ -302,19 +325,16 @@ def model_runs(sid:int,symbol:str,u:User=Depends(user),s:Session=Depends(db)):
 @app.get("/sessions/{sid}/models/{symbol}")
 def get_model(sid:int,symbol:str,u:User=Depends(user),s:Session=Depends(db)):
     z,i,prices=model_context(s,sid,symbol,u)
+    ensure_model(s,z,i,prices)
     return model_response(s,z,i,prices)
 
 @app.post("/sessions/{sid}/models/{symbol}/train")
 def train_model(sid:int,symbol:str,u:User=Depends(user),s:Session=Depends(db)):
     z,i,prices=model_context(s,sid,symbol,u)
-    existing=s.scalar(select(ModelRun.id).where(ModelRun.simulation_id==z.id,ModelRun.instrument_id==i.id,ModelRun.version==ml.VERSION,ModelRun.trained_through==z.current_date))
-    if existing: return model_response(s,z,i,prices)
-    try: result=ml.train(prices)
-    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
-    result["artifact"]["dataset_revision"]=s.scalar(select(ImportRun.revision).order_by(ImportRun.id.desc()))
-    s.add(ModelRun(simulation_id=z.id,instrument_id=i.id,version=ml.VERSION,trained_through=z.current_date,samples=result["sample_count"],train_samples=result["train_count"],test_samples=result["test_count"],metrics_json=json.dumps(result["metrics"]),artifact_json=json.dumps(result["artifact"]),holdout_json=json.dumps(result["holdout"])))
-    s.commit()
-    return model_response(s,z,i,prices)
+    ensure_model(s,z,i,prices)
+    response=model_response(s,z,i,prices)
+    if response["status"]=="untrained": raise HTTPException(422,f"At least {ml.MIN_SAMPLES+21} trading days of valid history are needed before training")
+    return response
 
 class JournalIn(BaseModel):
     symbol:str=Field(min_length=1,max_length=40)
@@ -351,6 +371,7 @@ def create_journal(sid:int,x:JournalIn,u:User=Depends(user),s:Session=Depends(db
     examples=ml.examples(prices) if x.horizon_days==1 else []
     known=[row.label for row in examples if row.label is not None]
     baseline=("Up" if sum(known)*2>=len(known) else "Down") if known else None
+    if x.horizon_days==1: ensure_model(s,z,i,prices)
     run=s.scalar(select(ModelRun).where(ModelRun.simulation_id==z.id,ModelRun.instrument_id==i.id,ModelRun.version==ml.VERSION,ModelRun.trained_through<=z.current_date).order_by(ModelRun.trained_through.desc(),ModelRun.id.desc())) if x.horizon_days==1 else None
     snapshot=None
     if run and examples and examples[-1].date==z.current_date:

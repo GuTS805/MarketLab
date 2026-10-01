@@ -1,6 +1,6 @@
 import {dateLabel} from '../lib/api';
 
-const dot:Record<string,string>={covid:'bg-red-500',policy:'bg-teal',banking:'bg-amber-500',global:'bg-sky-500',politics:'bg-violet-500',markets:'bg-navy'};
+const dot:Record<string,string>={covid:'bg-red-500',policy:'bg-accent',banking:'bg-amber-500',global:'bg-sky-500',politics:'bg-violet-500',markets:'bg-navy'};
 export default function News({events,title='Market news',sub,limit}:{events:any[];title?:string;sub?:string;limit?:number}){
   const rows=limit?events.slice(0,limit):events;
   return <div className="card"><h2 className="text-lg font-bold">{title}</h2><p className="mb-4 text-xs text-slate-400">{sub||'Only events up to your simulated date are shown'}</p>

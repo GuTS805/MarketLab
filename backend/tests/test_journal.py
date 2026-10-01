@@ -69,6 +69,10 @@ def test_journal_snapshots_and_reveals_only_after_horizon():
         assert scored["status"]=="resolved"
         assert scored["model_snapshot"]["probability_up"]==next_day["model_snapshot"]["probability_up"]
         assert scored["model_snapshot"]["correct"]==(scored["model_snapshot"]["predicted_direction"]==scored["actual_direction"])
+        profile=client.get(f"/sessions/{sid}/models/JOURNAL",headers=auth).json()["decision_profile"]
+        assert profile["resolved"]==1
+        assert profile["correct"]==int(scored["user_correct"])
+        assert profile["up_calls"]==1
     finally:
         if previous is None: app.dependency_overrides.pop(db,None)
         else: app.dependency_overrides[db]=previous

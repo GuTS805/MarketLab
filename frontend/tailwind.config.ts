@@ -3,7 +3,7 @@ export default {
   content:['./app/**/*.{ts,tsx}','./components/**/*.{ts,tsx}'],
   theme:{extend:{colors:{
     navy:{DEFAULT:'#0f1f33',light:'#17304d'},
-    teal:{DEFAULT:'#0a8a84',50:'#e8f6f5',100:'#c8ebe8',200:'#96d8d3',300:'#5fc1ba',400:'#2fa8a0',500:'#0a8a84',600:'#08706b',700:'#075a56'},
+    accent:{DEFAULT:'#b07845',50:'#faf5ef',100:'#f0e3d3',200:'#ddc2a3',300:'#caa47b',400:'#b9895a',500:'#b07845',600:'#956137',700:'#784b2c'},
     canvas:'#f3f5f7'
   }}},
   plugins:[]

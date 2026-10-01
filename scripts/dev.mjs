@@ -57,7 +57,7 @@ if(!existsSync(next)){
   if(!apiReusable||!webReusable)console.log('Press Ctrl+C to stop the servers started here.\n');
 
   if(!apiReusable)children.push(['Backend',spawn(python,['-m','uvicorn','app.main:app','--reload','--host','127.0.0.1','--port',String(apiPort)],{
-    cwd:backend,stdio:'inherit',env:{...process.env,JWT_SECRET:process.env.JWT_SECRET||'blindmarket-local-development-only'}
+    cwd:backend,stdio:'inherit',env:{...process.env}
   })]);
   if(!webReusable)children.push(['Frontend',spawn(process.execPath,[next,'dev','-p',String(webPort)],{
     cwd:frontend,stdio:'inherit',env:{...process.env,NEXT_PUBLIC_API_URL:`http://localhost:${apiPort}`,MARKETLAB_NEXT_DIST_DIR:webPort===3000?'.next':`.next-${webPort}`}

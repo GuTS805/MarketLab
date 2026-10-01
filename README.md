@@ -5,16 +5,16 @@ An educational market decision laboratory. Learn core ideas, research historical
 ## The learning loop
 
 1. **Learn:** `/learn` has short interactive lessons on prediction, fair testing, journaling, and diversification.
-2. **Research:** `/explore` and stock pages show historical prices up to the simulation date. `/model-lab` trains a model on only the history available then.
+2. **Research:** `/explore` and stock pages show historical prices up to the simulation date. `/model-lab` shows a model that trains automatically on only the history available then.
 3. **Predict:** `/journal` records the stock, your reason, expected direction, and a horizon of 1, 5, or 20 available stock closes. The order ticket can also save a journal entry linked to a virtual order. A one-day entry freezes any available next-day model prediction and a simple historical-majority baseline.
 4. **Replay:** `/replay` advances historical time and processes pending orders. Journal outcomes remain hidden until the selected number of later stock closes is available.
 5. **Review:** the Journal compares one-day calls with the saved model and baseline. Longer-horizon entries review your prediction only, because the current model predicts just the next day. `/results` compares virtual portfolio performance with NIFTY 50. Direction accuracy is not the same as trading profit.
 
 For a guided route, open `/challenge` after creating a simulation. The challenge tracks activity over 20 revealed trading days and, once complete, compares portfolio return, benchmark return, drawdown, recorded predictions, and comparable one-day model/baseline calls. Its lesson links are chosen from recorded outcomes. The debrief is frozen at the challenge endpoint even if the simulation later continues.
 
-Model Lab also reports three earlier expanding-window walk-forward checks before its final 20% holdout, plus a history of saved training runs. A model is only labeled above baseline when both the final holdout and earlier checks pass the app's threshold. Historical test results cannot guarantee future performance.
+Model Insights also reports three earlier expanding-window walk-forward checks before its final 20% holdout, plus a history of saved training runs. A model is only labeled above baseline when both the final holdout and earlier checks pass the app's threshold. Historical test results cannot guarantee future performance.
 
-The journal and model are educational tools, not investment advice. Training never places a trade automatically.
+The journal and model are educational tools, not investment advice. The model never places a trade automatically.
 
 ## Quick start
 
@@ -46,7 +46,23 @@ Open `http://localhost:3000`. The API docs are at `http://localhost:8000/docs`.
 
 If Hugging Face downloads are unavailable, download the pinned dataset revision manually and run `python import_market.py --local D:\path\to\dataset`. The local folder must contain `stocks/` and `indices/`. With an empty database the UI directs users to setup, and the API health response reports zero instruments.
 
-## Data and reproducibility
+## Supabase database
+
+Supabase is supported as hosted PostgreSQL. Login remains handled by the FastAPI backend, not Supabase Auth. The browser never receives the database password. SQLite remains the default for offline development.
+
+1. Create a Supabase project and copy its database connection URI from **Connect**. For a local IPv4 connection, use the session pooler on port 5432.
+2. Copy `.env.example` to `.env` if it does not exist. Set `DATABASE_URL` to the actual connection URI and set a strong `JWT_SECRET`. URL-encode special characters in the database password. Do not put either secret in a `NEXT_PUBLIC_` variable or commit `.env`.
+3. Install the backend requirements, stop the running development servers, then run `npm run db:check` to verify the connection.
+4. To preserve your existing local accounts, simulations and market data, run `npm run db:migrate` for a preview, followed by `npm run db:migrate -- --apply`. The migration refuses a destination containing application data and leaves the original SQLite file untouched. Back up both databases before migrating.
+5. Run `npm run dev` again.
+
+For an empty installation without local data, run `python import_market.py` from `backend` instead of migrating. The importer uses the configured database.
+
+Supabase connections default to SSL. Transaction pooler connections on port 6543 disable prepared statements and use no client-side connection pool. Application tables have row-level security enabled and direct access revoked from the Supabase `anon` and `authenticated` roles. The trusted backend database connection still performs the existing account ownership checks. Do not expose that connection credential to the frontend.
+
+Cloud connectivity must be checked against your own Supabase project. No project credentials are bundled with this repository.
+
+## Historical data
 
 The importer pins `vishnun0027/indian-market-historical-ohlcv` at revision `fe783082c7ec68847ecd0d0b4e1ca06364507e5f`, imports 12 cross-sector stocks plus `NIFTY_50`, and defaults to 2019–2021. It validates schema, nulls, duplicate dates, OHLC bounds, coverage, and corporate-action rows, then records the source, revision, symbols, coverage, timestamp, and validation report in `import_runs`.
 
@@ -64,9 +80,10 @@ Execution uses raw OHLC and never uses retrospectively adjusted prices. On each 
 
 ## Learning features
 
-- **Trainable Model Lab:** choose an imported stock and press **Train model**. The app trains a deterministic logistic-regression classifier for whether the next trading day's raw close will exceed today's close. Six features use only raw OHLCV known by the current simulation date: 1-, 5-, and 10-day returns; 10-day volatility; today's range; and today's volume relative to its 20-day history. Windows crossing stock splits are excluded. It needs at least 160 labeled examples; at the start of the data range the app displays how much more history is needed.
-- **Evaluation:** the earliest 80% of labeled examples train the evaluation model; the latest 20% are an untouched chronological holdout. The lab reports holdout accuracy, a training-majority baseline, Brier score, confusion counts, training loss, and recent test predictions. The final saved model is then refit on all labels available through the simulation date. The current day's label remains unknown. Training the same stock/date/version again reuses its saved run. Model weights and preprocessing statistics are stored as JSON in `model_runs`, scoped to the user's session.
-- **Forecast use:** the lab shows a next-day up score and links to the stock's chart and order ticket. The score is not calibrated or guaranteed; training does not place a trade. Later simulation dates can retrain using newly observed outcomes. For a demonstration, start on 3 February 2020 and try RELIANCE; 2019 history is already available for training.
+- **Automatic historical model:** open an imported stock or Model Insights and the app trains when enough past data exists. The app trains a deterministic logistic-regression classifier for whether the next trading day's raw close will exceed today's close. Six features use only raw OHLCV known by the current simulation date: 1-, 5-, and 10-day returns; 10-day volatility; today's range; and today's volume relative to its 20-day history. Windows crossing stock splits are excluded. It needs at least 160 labeled examples; at the start of the data range the app displays how much more history is needed.
+- **Evaluation:** the earliest 80% of labeled examples train the evaluation model; the latest 20% are an untouched chronological holdout. The lab reports holdout accuracy, a training-majority baseline, Brier score, confusion counts, training loss, and recent test predictions. The final saved model is then refit on all labels available through the simulation date. The current day's label remains unknown. Viewing the same stock/date/version again reuses its saved run. Model weights and preprocessing statistics are stored as JSON in `model_runs`, scoped to the user's session.
+- **Forecast use:** Model Insights shows a next-day up score and links to the stock's chart and order ticket. The score is not calibrated or guaranteed; the model does not place a trade. On later simulation dates, it updates using newly observed outcomes when viewed. For a demonstration, start on 3 February 2020 and try RELIANCE; 2019 history is already available.
+- **Personal feedback:** resolved one-day journal predictions for the selected stock form a private decision profile. The app reports your accuracy and directional tendency once there is enough history. It does not claim that a few personal decisions improve the market probability.
 
 - **Trading costs (optional per session):** STT 0.1% both sides, NSE transaction charges, SEBI fee, GST on those, stamp duty 0.015% on buys, DP charge ₹13 + GST on sells, zero brokerage. Costs are reserved on pending buys and recorded as `fees` ledger entries.
 - **Market events:** a curated timeline of real 2019–2021 events (`backend/app/events.py`). The API only returns events on or before the simulated date, so it never leaks the future.

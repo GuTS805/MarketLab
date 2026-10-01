@@ -6,6 +6,7 @@ import pandas as pd
 from sqlalchemy import select
 from app.database import Base, engine, SessionLocal
 from app.models import Instrument, DailyPrice, ImportRun
+from app.schema import initialize_schema
 
 REPO="vishnun0027/indian-market-historical-ohlcv"
 REVISION="fe783082c7ec68847ecd0d0b4e1ca06364507e5f"
@@ -22,7 +23,7 @@ def read(path,kind,name,revision):
     if path: return pd.read_parquet(Path(path)/kind/f"{name}.parquet")
     return pd.read_parquet(f"https://huggingface.co/datasets/{REPO}/resolve/{revision}/{kind}/{name}.parquet")
 def run(local=None,start="2019-01-01",end="2021-12-31",revision=REVISION):
-    Base.metadata.create_all(engine); report={}; coverage=[]
+    initialize_schema(engine, Base.metadata); report={}; coverage=[]
     with SessionLocal() as s:
         for symbol,(name,sector) in {**SYMBOLS,BENCHMARK:("NIFTY 50","Benchmark")}.items():
             kind="indices" if symbol==BENCHMARK else "stocks"; df=read(local,kind,symbol,revision); df["date"]=pd.to_datetime(df.date).dt.date; df=df[(df.date>=pd.Timestamp(start).date())&(df.date<=pd.Timestamp(end).date())].copy(); report[symbol]=validate(df,symbol)
